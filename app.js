@@ -9,6 +9,8 @@ let paintMode = null; // 'select' or 'deselect'
 let currentLang = 'java';
 let latestCondition = '';
 let lastTouchTimestamp = 0;
+const lastCellTapTimes = new Map();
+const DOUBLE_TAP_DELAY = 400; // ms para detectar doble toque
 
 // ---- Letter Presets (5x5) ----
 const LETTER_PRESETS = {
@@ -92,6 +94,7 @@ function applyPreset(letter) {
 function handleCellInteraction(cell, key, coordEvent, isRightClick = false) {
     if (isRightClick) {
         selectedCells.delete(key);
+        lastCellTapTimes.delete(key);
         paintMode = 'deselect';
         isPainting = true;
         updateCellVisual(cell, key);
@@ -101,20 +104,40 @@ function handleCellInteraction(cell, key, coordEvent, isRightClick = false) {
         return;
     }
 
-    // Toggle normal (1 clic selecciona, el siguiente clic deselecciona)
-    if (selectedCells.has(key)) {
-        selectedCells.delete(key);
-        paintMode = 'deselect';
-    } else {
+    const now = Date.now();
+    const lastTime = lastCellTapTimes.get(key) || 0;
+    const isDouble = (now - lastTime) < DOUBLE_TAP_DELAY;
+
+    if (!selectedCells.has(key)) {
+        // 1 toque: seleccionar
         selectedCells.add(key);
+        lastCellTapTimes.set(key, now);
         paintMode = 'select';
+        isPainting = true;
+        updateCellVisual(cell, key);
+        addRipple(cell, coordEvent);
+        generateCondition();
+        updateCounter();
+    } else {
+        // Celda ya seleccionada
+        if (isDouble) {
+            // 2 toques rápidos: deseleccionar
+            selectedCells.delete(key);
+            lastCellTapTimes.delete(key);
+            paintMode = 'deselect';
+            isPainting = true;
+            updateCellVisual(cell, key);
+            addRipple(cell, coordEvent);
+            generateCondition();
+            updateCounter();
+        } else {
+            // Primer toque en celda seleccionada: guardar timestamp
+            lastCellTapTimes.set(key, now);
+            paintMode = null;
+            isPainting = false;
+            addRipple(cell, coordEvent);
+        }
     }
-    
-    isPainting = true;
-    updateCellVisual(cell, key);
-    addRipple(cell, coordEvent);
-    generateCondition();
-    updateCounter();
 }
 
 // ---- Matrix Building ----
@@ -188,13 +211,14 @@ function rebuildMatrix() {
                 }
             });
 
-            // Mobile Touch support
+            // Mobile Touch support — preventDefault bloquea eventos sintéticos mouse
             cell.addEventListener('touchstart', (e) => {
+                e.preventDefault();
                 lastTouchTimestamp = Date.now();
                 const touch = e.touches[0];
                 const key = `${f},${c}`;
                 handleCellInteraction(cell, key, touch, false);
-            }, { passive: true });
+            }, { passive: false });
 
             cell.addEventListener('contextmenu', (e) => e.preventDefault());
 
