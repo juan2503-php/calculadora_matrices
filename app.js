@@ -9,8 +9,6 @@ let paintMode = null; // 'select' or 'deselect'
 let currentLang = 'java';
 let latestCondition = '';
 let lastTouchTimestamp = 0;
-const lastCellTapTimes = new Map();
-const DOUBLE_CLICK_DELAY = 500; // ms threshold for double-click / two clicks
 
 // ---- Letter Presets (5x5) ----
 const LETTER_PRESETS = {
@@ -94,7 +92,6 @@ function applyPreset(letter) {
 function handleCellInteraction(cell, key, coordEvent, isRightClick = false) {
     if (isRightClick) {
         selectedCells.delete(key);
-        lastCellTapTimes.delete(key);
         paintMode = 'deselect';
         isPainting = true;
         updateCellVisual(cell, key);
@@ -104,44 +101,24 @@ function handleCellInteraction(cell, key, coordEvent, isRightClick = false) {
         return;
     }
 
-    const now = Date.now();
-    const lastTime = lastCellTapTimes.get(key) || 0;
-    const isDouble = (now - lastTime) < DOUBLE_CLICK_DELAY;
-
-    if (!selectedCells.has(key)) {
-        // Con un solo click se selecciona
-        selectedCells.add(key);
-        lastCellTapTimes.set(key, now);
-        paintMode = 'select';
-        isPainting = true;
-        updateCellVisual(cell, key);
-        addRipple(cell, coordEvent);
-        generateCondition();
-        updateCounter();
+    // Toggle normal (1 clic selecciona, el siguiente clic deselecciona)
+    if (selectedCells.has(key)) {
+        selectedCells.delete(key);
+        paintMode = 'deselect';
     } else {
-        // Celda ya seleccionada: con dos clicks se quita la selección
-        if (isDouble) {
-            selectedCells.delete(key);
-            lastCellTapTimes.delete(key);
-            paintMode = 'deselect';
-            isPainting = true;
-            updateCellVisual(cell, key);
-            addRipple(cell, coordEvent);
-            generateCondition();
-            updateCounter();
-        } else {
-            // Primer click sobre celda seleccionada: registrar timestamp y esperar segundo click
-            lastCellTapTimes.set(key, now);
-            paintMode = null;
-            isPainting = false;
-            addRipple(cell, coordEvent);
-        }
+        selectedCells.add(key);
+        paintMode = 'select';
     }
+    
+    isPainting = true;
+    updateCellVisual(cell, key);
+    addRipple(cell, coordEvent);
+    generateCondition();
+    updateCounter();
 }
 
 // ---- Matrix Building ----
 function rebuildMatrix() {
-    lastCellTapTimes.clear();
     const numRows = parseInt(document.getElementById('numRows').value) || 5;
     const numCols = parseInt(document.getElementById('numCols').value) || 5;
 
@@ -200,13 +177,11 @@ function rebuildMatrix() {
                 const key = `${f},${c}`;
                 if (paintMode === 'select' && !selectedCells.has(key)) {
                     selectedCells.add(key);
-                    lastCellTapTimes.set(key, Date.now());
                     updateCellVisual(cell, key);
                     generateCondition();
                     updateCounter();
                 } else if (paintMode === 'deselect' && selectedCells.has(key)) {
                     selectedCells.delete(key);
-                    lastCellTapTimes.delete(key);
                     updateCellVisual(cell, key);
                     generateCondition();
                     updateCounter();
@@ -242,13 +217,11 @@ function rebuildMatrix() {
             const k = `${cellEl.dataset.row},${cellEl.dataset.col}`;
             if (paintMode === 'select' && !selectedCells.has(k)) {
                 selectedCells.add(k);
-                lastCellTapTimes.set(k, Date.now());
                 updateCellVisual(cellEl, k);
                 generateCondition();
                 updateCounter();
             } else if (paintMode === 'deselect' && selectedCells.has(k)) {
                 selectedCells.delete(k);
-                lastCellTapTimes.delete(k);
                 updateCellVisual(cellEl, k);
                 generateCondition();
                 updateCounter();
@@ -361,7 +334,6 @@ function adjustValue(inputId, delta) {
 // ---- Actions ----
 function clearAll() {
     selectedCells.clear();
-    lastCellTapTimes.clear();
     updateAllCellVisuals();
     generateCondition();
     updateCounter();
