@@ -8,7 +8,6 @@ let isPainting = false;
 let paintMode = null; // 'select' or 'deselect'
 let currentLang = 'java';
 let latestCondition = '';
-let lastTouchTimestamp = 0;
 const lastCellTapTimes = new Map();
 const DOUBLE_TAP_DELAY = 400; // ms para detectar doble toque
 
@@ -185,16 +184,14 @@ function rebuildMatrix() {
             cell.appendChild(indexLabel);
             cell.appendChild(dot);
 
-            // Event listeners
-            cell.addEventListener('mousedown', (e) => {
-                if (Date.now() - lastTouchTimestamp < 700) {
-                    return; // Evita conflicto con eventos sintéticos táctiles en móvil
-                }
+            // Pointer Events — un solo evento para mouse Y touch, sin duplicados
+            cell.addEventListener('pointerdown', (e) => {
                 e.preventDefault();
                 const key = `${f},${c}`;
                 handleCellInteraction(cell, key, e, e.button === 2);
             });
 
+            // Drag-painting en desktop (mouse hover mientras se arrastra)
             cell.addEventListener('mouseenter', () => {
                 if (!isPainting || !paintMode) return;
                 const key = `${f},${c}`;
@@ -211,15 +208,6 @@ function rebuildMatrix() {
                 }
             });
 
-            // Mobile Touch support — preventDefault bloquea eventos sintéticos mouse
-            cell.addEventListener('touchstart', (e) => {
-                e.preventDefault();
-                lastTouchTimestamp = Date.now();
-                const touch = e.touches[0];
-                const key = `${f},${c}`;
-                handleCellInteraction(cell, key, touch, false);
-            }, { passive: false });
-
             cell.addEventListener('contextmenu', (e) => e.preventDefault());
 
             // Check if previously selected
@@ -231,11 +219,10 @@ function rebuildMatrix() {
         }
     }
 
-    // Grid touchmove for dragging across cells on mobile
-    grid.addEventListener('touchmove', (e) => {
+    // Grid pointermove for dragging across cells on mobile
+    grid.addEventListener('pointermove', (e) => {
         if (!isPainting || !paintMode) return;
-        const touch = e.touches[0];
-        const target = document.elementFromPoint(touch.clientX, touch.clientY);
+        const target = document.elementFromPoint(e.clientX, e.clientY);
         const cellEl = target ? target.closest('.matrix-cell') : null;
         if (cellEl && cellEl.dataset.row !== undefined) {
             const k = `${cellEl.dataset.row},${cellEl.dataset.col}`;
@@ -251,7 +238,7 @@ function rebuildMatrix() {
                 updateCounter();
             }
         }
-    }, { passive: true });
+    });
 
     // Clean up selections that are out of bounds
     const toRemove = [];
@@ -265,23 +252,13 @@ function rebuildMatrix() {
     updateCounter();
 }
 
-// Global mouse and touch events for paint mode
-document.addEventListener('mouseup', () => {
+// Global pointer events for paint mode
+document.addEventListener('pointerup', () => {
     isPainting = false;
     paintMode = null;
 });
 
-document.addEventListener('mouseleave', () => {
-    isPainting = false;
-    paintMode = null;
-});
-
-document.addEventListener('touchend', () => {
-    isPainting = false;
-    paintMode = null;
-});
-
-document.addEventListener('touchcancel', () => {
+document.addEventListener('pointercancel', () => {
     isPainting = false;
     paintMode = null;
 });
