@@ -8,6 +8,9 @@ let isPainting = false;
 let paintMode = null; // 'select' or 'deselect'
 let currentLang = 'java';
 let latestCondition = '';
+let lastTouchTimestamp = 0;
+const lastCellTapTimes = new Map();
+const DOUBLE_CLICK_DELAY = 500; // ms threshold for double-click / two clicks
 
 // ---- Letter Presets (5x5) ----
 const LETTER_PRESETS = {
@@ -87,8 +90,58 @@ function applyPreset(letter) {
     updateCounter();
 }
 
+// ---- Cell Click & Touch Interaction ----
+function handleCellInteraction(cell, key, coordEvent, isRightClick = false) {
+    if (isRightClick) {
+        selectedCells.delete(key);
+        lastCellTapTimes.delete(key);
+        paintMode = 'deselect';
+        isPainting = true;
+        updateCellVisual(cell, key);
+        addRipple(cell, coordEvent);
+        generateCondition();
+        updateCounter();
+        return;
+    }
+
+    const now = Date.now();
+    const lastTime = lastCellTapTimes.get(key) || 0;
+    const isDouble = (now - lastTime) < DOUBLE_CLICK_DELAY;
+
+    if (!selectedCells.has(key)) {
+        // Con un solo click se selecciona
+        selectedCells.add(key);
+        lastCellTapTimes.set(key, now);
+        paintMode = 'select';
+        isPainting = true;
+        updateCellVisual(cell, key);
+        addRipple(cell, coordEvent);
+        generateCondition();
+        updateCounter();
+    } else {
+        // Celda ya seleccionada: con dos clicks se quita la selección
+        if (isDouble) {
+            selectedCells.delete(key);
+            lastCellTapTimes.delete(key);
+            paintMode = 'deselect';
+            isPainting = true;
+            updateCellVisual(cell, key);
+            addRipple(cell, coordEvent);
+            generateCondition();
+            updateCounter();
+        } else {
+            // Primer click sobre celda seleccionada: registrar timestamp y esperar segundo click
+            lastCellTapTimes.set(key, now);
+            paintMode = null;
+            isPainting = false;
+            addRipple(cell, coordEvent);
+        }
+    }
+}
+
 // ---- Matrix Building ----
 function rebuildMatrix() {
+    lastCellTapTimes.clear();
     const numRows = parseInt(document.getElementById('numRows').value) || 5;
     const numCols = parseInt(document.getElementById('numCols').value) || 5;
 
@@ -134,58 +187,38 @@ function rebuildMatrix() {
 
             // Event listeners
             cell.addEventListener('mousedown', (e) => {
+                if (Date.now() - lastTouchTimestamp < 700) {
+                    return; // Evita conflicto con eventos sintéticos táctiles en móvil
+                }
                 e.preventDefault();
                 const key = `${f},${c}`;
-                if (e.button === 2) {
-                    // Right click = deselect
-                    paintMode = 'deselect';
-                    selectedCells.delete(key);
-                } else {
-                    // Left click = toggle, then paint with that mode
-                    if (selectedCells.has(key)) {
-                        selectedCells.delete(key);
-                        paintMode = 'deselect';
-                    } else {
-                        selectedCells.add(key);
-                        paintMode = 'select';
-                    }
-                }
-                isPainting = true;
-                updateCellVisual(cell, key);
-                addRipple(cell, e);
-                generateCondition();
-                updateCounter();
+                handleCellInteraction(cell, key, e, e.button === 2);
             });
 
             cell.addEventListener('mouseenter', () => {
-                if (!isPainting) return;
+                if (!isPainting || !paintMode) return;
                 const key = `${f},${c}`;
-                if (paintMode === 'select') {
+                if (paintMode === 'select' && !selectedCells.has(key)) {
                     selectedCells.add(key);
-                } else {
+                    lastCellTapTimes.set(key, Date.now());
+                    updateCellVisual(cell, key);
+                    generateCondition();
+                    updateCounter();
+                } else if (paintMode === 'deselect' && selectedCells.has(key)) {
                     selectedCells.delete(key);
+                    lastCellTapTimes.delete(key);
+                    updateCellVisual(cell, key);
+                    generateCondition();
+                    updateCounter();
                 }
-                updateCellVisual(cell, key);
-                generateCondition();
-                updateCounter();
             });
 
             // Mobile Touch support
             cell.addEventListener('touchstart', (e) => {
+                lastTouchTimestamp = Date.now();
                 const touch = e.touches[0];
                 const key = `${f},${c}`;
-                if (selectedCells.has(key)) {
-                    selectedCells.delete(key);
-                    paintMode = 'deselect';
-                } else {
-                    selectedCells.add(key);
-                    paintMode = 'select';
-                }
-                isPainting = true;
-                updateCellVisual(cell, key);
-                addRipple(cell, touch);
-                generateCondition();
-                updateCounter();
+                handleCellInteraction(cell, key, touch, false);
             }, { passive: true });
 
             cell.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -209,11 +242,13 @@ function rebuildMatrix() {
             const k = `${cellEl.dataset.row},${cellEl.dataset.col}`;
             if (paintMode === 'select' && !selectedCells.has(k)) {
                 selectedCells.add(k);
+                lastCellTapTimes.set(k, Date.now());
                 updateCellVisual(cellEl, k);
                 generateCondition();
                 updateCounter();
             } else if (paintMode === 'deselect' && selectedCells.has(k)) {
                 selectedCells.delete(k);
+                lastCellTapTimes.delete(k);
                 updateCellVisual(cellEl, k);
                 generateCondition();
                 updateCounter();
@@ -326,6 +361,7 @@ function adjustValue(inputId, delta) {
 // ---- Actions ----
 function clearAll() {
     selectedCells.clear();
+    lastCellTapTimes.clear();
     updateAllCellVisuals();
     generateCondition();
     updateCounter();
